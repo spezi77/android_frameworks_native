@@ -790,9 +790,11 @@ status_t HWComposer::prepare() {
                         }
                         // If the composition type is BLIT, we set this to
                         // trigger a FLIP
+#ifdef QCOM_BSP
                         if(l.compositionType == HWC_BLIT) {
                             disp.hasFbComp = true;
                         }
+#endif
                         if (l.compositionType == HWC_OVERLAY) {
                             disp.hasOvComp = true;
                         }
@@ -1416,7 +1418,13 @@ void HWComposer::dump(String8& result) const {
                             "HWC",
                             "BACKGROUND",
                             "FB TARGET",
+<<<<<<< HEAD
                             "FB_BLIT",
+=======
+#ifdef QCOM_BSP
+                            "FB_BLIT",
+#endif
+>>>>>>> d8be782... ifdef HWC_BLIT
                             "UNKNOWN"};
                     if (type >= NELEM(compositionTypeName))
                         type = NELEM(compositionTypeName) - 1;
