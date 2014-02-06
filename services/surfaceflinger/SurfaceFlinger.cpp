@@ -157,6 +157,7 @@ SurfaceFlinger::SurfaceFlinger()
         mDebugInTransaction(0),
         mLastTransactionTime(0),
         mBootFinished(false),
+        mUseDithering(false),
         mPrimaryHWVsyncEnabled(false),
         mHWVsyncAvailable(false),
         mDaltonize(false)
@@ -598,6 +599,9 @@ void SurfaceFlinger::init() {
     ALOGI("Client API: %s", eglQueryString(mEGLDisplay, EGL_CLIENT_APIS)?:"Not Supported");
     ALOGI("EGLSurface: %d-%d-%d-%d, config=%p", r, g, b, a, mEGLConfig);
 
+    // assume red has minimum color depth
+    mMinColorDepth = r;
+
     // get a RenderEngine for the given display / config (can't fail)
     mRenderEngine = RenderEngine::create(mEGLDisplay, mEGLConfig);
 
@@ -635,6 +639,9 @@ void SurfaceFlinger::init() {
                 hw->acquireScreen();
             }
             mDisplays.add(token, hw);
+            if (!mUseDithering && bitsPerPixel(mHwc->getFormat(i)) <= 16) {
+                mUseDithering = true;
+            }
         }
     }
 
@@ -3158,7 +3165,8 @@ void SurfaceFlinger::renderScreenImplLocked(
 #endif
                 if (layer->isVisible()) {
                     if (filtering) layer->setFiltering(true);
-                    layer->draw(hw);
+                    if(!layer->isProtected())
+                           layer->draw(hw);
                     if (filtering) layer->setFiltering(false);
                 }
             }
