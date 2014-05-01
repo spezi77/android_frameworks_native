@@ -74,6 +74,7 @@ GraphicBuffer::GraphicBuffer(uint32_t w, uint32_t h,
     usage  = inUsage;
     handle = inHandle;
 }
+#endif
 
 GraphicBuffer::GraphicBuffer(ANativeWindowBuffer* buffer, bool keepOwnership)
     : BASE(), mOwner(keepOwnership ? ownHandle : ownNone),
