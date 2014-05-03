@@ -210,17 +210,27 @@ public:
     // connected to the specified producer API.
     virtual status_t disconnect(int api);
 
-    // setBufferSize enables us to specify user defined sizes for the buffers
-    // that need to be allocated by surfaceflinger for its client. This is
-    // useful for cases where the client doesn't want the gralloc to calculate
-    // buffer size. client should reset this value to 0, if it wants gralloc
-    // to calculate the size for the buffer. this will take effect from next
-    // dequeue buffer.
-    virtual status_t setBuffersSize(int size);
+    // Since there can be multiple buffers for a layer, we need to store
+    // dirty region for all of them.
+    // updateDirtyRegion is used to update the dirty region passed from
+    // HW renderer for a layer on it's respective buffer index.
+    // Here first argument is the buffer index and left, top, right, bottom
+    // are parameters of dirty rectangle.
+    virtual status_t updateDirtyRegion(int bufferidx, int left, int top,
+                                       int right, int bottom);
+
+    // setCurrentDirtyRegion is used to set the layer's dirty region
+    // for it's buffer index which is currently in use.
+    virtual status_t setCurrentDirtyRegion(int bufferidx);
+
+    // getCurrentDirtyRegion is used for retrieving the layer's dirty region
+    // for it's buffer index which is currently in use.
+    virtual status_t getCurrentDirtyRegion(Rect& dirtyRect);
 
     /*
      * IGraphicBufferConsumer interface
      */
+
     // acquireBuffer attempts to acquire ownership of the next pending buffer in
     // the BufferQueue.  If no buffer is pending then it returns -EINVAL.  If a
     // buffer is successfully acquired, the information about the buffer is
