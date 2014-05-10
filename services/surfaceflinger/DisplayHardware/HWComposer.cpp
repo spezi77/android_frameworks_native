@@ -822,14 +822,6 @@ status_t HWComposer::prepare() {
                     if (l.compositionType == HWC_FRAMEBUFFER) {
                         disp.hasFbComp = true;
                     }
-                    // If the composition type is BLIT, we set this to
-                    // trigger a FLIP
-                    if(l.compositionType == HWC_BLIT) {
-                        disp.hasFbComp = true;
-                     // Setting disp.hasBlitComp to true to identify
-                     // blit cases. This is used in features like swaprect.
-                        disp.hasBlitComp = true;
-                    }
                     if (l.compositionType == HWC_OVERLAY) {
                         disp.hasOvComp = true;
                     }
