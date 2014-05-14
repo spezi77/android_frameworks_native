@@ -581,16 +581,8 @@ private:
     // mTransformHint is used to optimize for screen rotations
     uint32_t mTransformHint;
 
-   // mConnectedProducerToken is used to set a binder death notification on the producer
+    // mConnectedProducerToken is used to set a binder death notification on the producer
     sp<IBinder> mConnectedProducerToken;
-
-   // mDirtyRegion is used to store dirty region for a layer
-   // on it's respective buffer index
-   mutable Rect mDirtyRegion[BufferQueue::NUM_BUFFER_SLOTS];
-
-   // mCurrentDirtyRegion is used to store the layer's dirty region
-   // for it's buffer index which currently in use
-   Rect mCurrentDirtyRegion;
 };
 
 // ----------------------------------------------------------------------------
