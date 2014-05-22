@@ -207,23 +207,6 @@ public:
     // connected to the specified producer API.
     virtual status_t disconnect(int api);
 
-    // Since there can be multiple buffers for a layer, we need to store
-    // dirty region for all of them.
-    // updateDirtyRegion is used to update the dirty region passed from
-    // HW renderer for a layer on it's respective buffer index.
-    // Here first argument is the buffer index and left, top, right, bottom
-    // are parameters of dirty rectangle.
-    virtual status_t updateDirtyRegion(int bufferidx, int left, int top,
-                                       int right, int bottom);
-
-    // setCurrentDirtyRegion is used to set the layer's dirty region
-    // for it's buffer index which is currently in use.
-    virtual status_t setCurrentDirtyRegion(int bufferidx);
-
-    // getCurrentDirtyRegion is used for retrieving the layer's dirty region
-    // for it's buffer index which is currently in use.
-    virtual status_t getCurrentDirtyRegion(Rect& dirtyRect);
-
     /*
      * IGraphicBufferConsumer interface
      */
