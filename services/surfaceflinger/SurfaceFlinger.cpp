@@ -637,7 +637,7 @@ void SurfaceFlinger::init() {
             vsyncPhaseOffsetNs, true);
     mEventThread = new EventThread(vsyncSrc);
     sp<VSyncSource> sfVsyncSrc = new DispSyncSource(&mPrimaryDispSync,
-            sfVsyncPhaseOffsetNs, false);
+            sfVsyncPhaseOffsetNs, true);
     mSFEventThread = new EventThread(sfVsyncSrc);
     mEventQueue.setEventThread(mSFEventThread);
 
@@ -1652,17 +1652,24 @@ void SurfaceFlinger::computeVisibleRegions(size_t dpy,
 
     outDirtyRegion.clear();
     bool bIgnoreLayers = false;
-    int extOnlyLayerIndex = -1;
+    int indexLOI = -1;
     size_t i = currentLayers.size();
 #ifdef QCOM_BSP
     while (i--) {
         const sp<Layer>& layer = currentLayers[i];
         // iterate through the layer list to find ext_only layers and store
         // the index
-        if ((dpy && layer->isExtOnly())) {
-            bIgnoreLayers = true;
-            extOnlyLayerIndex = i;
+        if (layer->isSecureDisplay()) {
+            bIgnoreLayers = true; //probably needs removing, for now I keep testing purpose
+            indexLOI = -1;
+            if(!dpy)
+                indexLOI = i;
             break;
+        }
+
+        if (dpy && layer->isExtOnly()) {
+            bIgnoreLayers = true;
+            indexLOI = i;
         }
     }
     i = currentLayers.size();
@@ -1677,7 +1684,9 @@ void SurfaceFlinger::computeVisibleRegions(size_t dpy,
         // Only add the layer marked as "external_only" to external list and
         // only remove the layer marked as "external_only" from primary list
         // and do not add the layer marked as "internal_only" to external list
-        if((bIgnoreLayers && extOnlyLayerIndex != (int)i) ||
+        // Add secure UI layers to primary and remove other layers from internal
+        //and external list
+        if((bIgnoreLayers && indexLOI != (int)i) ||
            (!dpy && layer->isExtOnly()) ||
            (dpy && layer->isIntOnly())) {
             // Ignore all other layers except the layers marked as ext_only
@@ -1962,29 +1971,13 @@ void SurfaceFlinger::doComposeSurfaces(const sp<const DisplayDevice>& hw, const 
 
 
             // screen is already cleared here
-#ifdef QCOM_BSP
-            clearRegion.clear();
-            if(mGpuTileRenderEnable && (mDisplays.size()==1)) {
-                clearRegion = region;
-                if (cur == end) {
-                    drawWormhole(hw, region);
-                } else if(canUseGpuTileRender) {
-                   /* If GPUTileRect DR optimization on clear only the UnionDR
-                    * (computed by computeTiledDr) which is the actual region
-                    * that will be drawn on FB in this cycle.. */
-                    clearRegion = clearRegion.andSelf(Region(unionDirtyRect));
-                }
-            } else
-#endif
-            {
-                if (!region.isEmpty()) {
-                    if (cur != end) {
-                        if (cur->getCompositionType() != HWC_BLIT)
-                            // can happen with SurfaceView
-                            drawWormhole(hw, region);
-                    } else
+            if (!region.isEmpty()) {
+                if (cur != end) {
+                    if (cur->getCompositionType() != HWC_BLIT)
+                        // can happen with SurfaceView
                         drawWormhole(hw, region);
-                }
+                } else
+                    drawWormhole(hw, region);
             }
         }
 
@@ -3252,9 +3245,16 @@ void SurfaceFlinger::renderScreenImplLocked(
         const Layer::State& state(layer->getDrawingState());
         if (state.layerStack == hw->getLayerStack()) {
             if (state.z >= minLayerZ && state.z <= maxLayerZ) {
+#ifdef QCOM_BSP
+                // dont render the secure Display Layer
+                if(layer->isSecureDisplay()) {
+                    continue;
+                }
+#endif
                 if (layer->isVisible()) {
                     if (filtering) layer->setFiltering(true);
-                    layer->draw(hw);
+                    if(!layer->isProtected())
+                           layer->draw(hw);
                     if (filtering) layer->setFiltering(false);
                 }
             }

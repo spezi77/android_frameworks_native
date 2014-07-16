@@ -602,8 +602,8 @@ status_t SensorService::enable(const sp<SensorEventConnection>& connection,
         if (device.getHalDeviceVersion() >= SENSORS_DEVICE_API_VERSION_1_1) {
             connection->setFirstFlushPending(handle, true);
             status_t err_flush = sensor->flush(connection.get(), handle);
-            // Flush may return error if the sensor is not activated or the underlying h/w sensor does
-            // not support flush.
+            // Flush may return error if the sensor is not activated or
+            // the underlying h/w sensor does not support flush.
             if (err_flush != NO_ERROR) {
                 connection->setFirstFlushPending(handle, false);
             }

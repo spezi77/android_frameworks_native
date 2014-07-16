@@ -788,11 +788,17 @@ status_t HWComposer::prepare() {
                         }
                         // If the composition type is BLIT, we set this to
                         // trigger a FLIP
+<<<<<<< HEAD
 #ifdef QCOM_BSP
                         if(l.compositionType == HWC_BLIT) {
                             disp.hasFbComp = true;
                         }
 #endif
+=======
+                        if(l.compositionType == HWC_BLIT) {
+                            disp.hasFbComp = true;
+                        }
+>>>>>>> 8aa668a088c66c35b2048c92d94762e7a90594bb
                         if (l.compositionType == HWC_OVERLAY) {
                             disp.hasOvComp = true;
                         }
