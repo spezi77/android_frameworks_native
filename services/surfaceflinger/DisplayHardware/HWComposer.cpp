@@ -1418,13 +1418,9 @@ void HWComposer::dump(String8& result) const {
                             "HWC",
                             "BACKGROUND",
                             "FB TARGET",
-<<<<<<< HEAD
-                            "FB_BLIT",
-=======
 #ifdef QCOM_BSP
                             "FB_BLIT",
 #endif
->>>>>>> d8be782... ifdef HWC_BLIT
                             "UNKNOWN"};
                     if (type >= NELEM(compositionTypeName))
                         type = NELEM(compositionTypeName) - 1;
