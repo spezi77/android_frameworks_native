@@ -1146,6 +1146,7 @@ void SurfaceFlinger::setUpHWComposer() {
             sp<const DisplayDevice> hw(mDisplays[dpy]);
             const int32_t id = hw->getHwcDisplayId();
             if (id >= 0) {
+#ifdef QCOM_HARDWARE
                 // Get the layers in the current drawying state
                 const LayerVector& layers(mDrawingState.layersSortedByZ);
                 bool freezeSurfacePresent = false;
@@ -1165,6 +1166,7 @@ void SurfaceFlinger::setUpHWComposer() {
                         }
                     }
                 }
+#endif
 
                 const Vector< sp<Layer> >& currentLayers(
                     hw->getVisibleLayersSortedByZ());
@@ -1178,6 +1180,7 @@ void SurfaceFlinger::setUpHWComposer() {
                      */
                     const sp<Layer>& layer(currentLayers[i]);
                     layer->setPerFrameData(hw, *cur);
+#ifdef QCOM_HARDWARE
                     if(freezeSurfacePresent) {
                         // if freezeSurfacePresent, set ANIMATING flag
                         cur->setAnimating(true);
@@ -1198,6 +1201,7 @@ void SurfaceFlinger::setUpHWComposer() {
                             }
                         }
                     }
+#endif
                 }
             }
         }
@@ -3212,6 +3216,11 @@ status_t SurfaceFlinger::captureScreenImplLocked(
         bool useReadPixels)
 {
     ATRACE_CALL();
+
+// Rotation artifact problems when useReadPixels is false
+#ifdef CAPRI_HWC
+    useReadPixels = true;
+#endif
 
     // get screen geometry
     const uint32_t hw_w = hw->getWidth();
