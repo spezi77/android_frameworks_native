@@ -645,20 +645,6 @@ int main(const int argc, const char *argv[]) {
 
     pthread_create(&signal_thread, &pthread_custom_attr, io_signal_handler, NULL);
 
-    pthread_t worker_threads, signal_thread;
-    pthread_attr_t pthread_custom_attr;
-    sigset_t sigs_to_block;
-    pthread_mutex_init(&io_mutex, NULL);
-    pthread_cond_init(&io_wait, NULL);
-
-    pthread_attr_init(&pthread_custom_attr);
-
-    sigemptyset(&sigs_to_block);
-    sigaddset(&sigs_to_block, SIGIO);
-    pthread_sigmask(SIG_BLOCK, &sigs_to_block, NULL);
-
-    pthread_create(&signal_thread, &pthread_custom_attr, io_signal_handler, NULL);
-
     ALOGI("installd firing up\n");
 
     if (initialize_globals() < 0) {
