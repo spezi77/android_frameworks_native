@@ -108,8 +108,6 @@ public:
     // create a work list for numLayers layer. sets HWC_GEOMETRY_CHANGED.
     status_t createWorkList(int32_t id, size_t numLayers);
 
-    void setSwapRect(Rect);
-
     bool supportsFramebufferTarget() const;
 
     // does this display have layers handled by HWC
@@ -118,9 +116,20 @@ public:
     // does this display have layers handled by GLES
     bool hasGlesComposition(int32_t id) const;
 
+#ifdef QCOM_BSP
+    // does this display have layers handled by overlays/blit
+    bool hasHwcOrBlitComposition(int32_t id) const;
+
+    //GPUTiledRect : function to find out if DR can be used in GPU Comp.
+    bool canUseTiledDR(int32_t id, Rect& dr);
+#endif
+
     // get the releaseFence file descriptor for a display's framebuffer layer.
     // the release fence is only valid after commit()
     sp<Fence> getAndResetReleaseFence(int32_t id);
+
+    // is VDS solution enabled
+    inline bool isVDSEnabled() const { return mVDSEnabled; };
 
     // needed forward declarations
     class LayerListIterator;
@@ -167,6 +176,9 @@ public:
         virtual void setFrame(const Rect& frame) = 0;
         virtual void setCrop(const FloatRect& crop) = 0;
         virtual void setVisibleRegionScreen(const Region& reg) = 0;
+#ifdef QCOM_BSP
+        virtual void setDirtyRect(const Rect& dirtyRect) = 0;
+#endif
         virtual void setBuffer(const sp<GraphicBuffer>& buffer) = 0;
         virtual void setAcquireFenceFd(int fenceFd) = 0;
         virtual void setPlaneAlpha(uint8_t alpha) = 0;
@@ -321,6 +333,9 @@ private:
         bool connected;
         bool hasFbComp;
         bool hasOvComp;
+#ifdef QCOM_BSP
+        bool hasBlitComp;
+#endif
         size_t capacity;
         hwc_display_contents_1* list;
         hwc_layer_1* framebufferTarget;
@@ -350,6 +365,7 @@ private:
     sp<VSyncThread>                 mVSyncThread;
     bool                            mDebugForceFakeVSync;
     BitSet32                        mAllocatedDisplayIDs;
+    bool                            mVDSEnabled;
 
     // protected by mLock
     mutable Mutex mLock;
@@ -357,6 +373,14 @@ private:
 
     // thread-safe
     mutable Mutex mEventControlLock;
+
+#ifdef QCOM_BSP
+    //GPUTileRect Optimization Functions.
+    bool isGeometryChanged(int32_t id);
+    void computeUnionDirtyRect(int32_t id, Rect& unionDirtyRect);
+    bool areVisibleRegionsOverlapping(int32_t id );
+    bool needsScaling(int32_t id);
+#endif
 };
 
 // ---------------------------------------------------------------------------

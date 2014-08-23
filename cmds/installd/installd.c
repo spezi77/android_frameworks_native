@@ -103,7 +103,8 @@ static int do_rm_user_data(char **arg, char reply[REPLY_MAX])
 
 static int do_mk_user_data(char **arg, char reply[REPLY_MAX])
 {
-    return make_user_data(arg[0], atoi(arg[1]), atoi(arg[2])); /* pkgname, uid, userid */
+    return make_user_data(arg[0], atoi(arg[1]), atoi(arg[2]), arg[3]);
+                             /* pkgname, uid, userid, seinfo */
 }
 
 static int do_rm_user(char **arg, char reply[REPLY_MAX])
@@ -119,6 +120,12 @@ static int do_movefiles(char **arg, char reply[REPLY_MAX])
 static int do_linklib(char **arg, char reply[REPLY_MAX])
 {
     return linklib(arg[0], arg[1], atoi(arg[2]));
+}
+
+static int do_restorecon_data(char **arg __attribute__((unused)),
+    char reply[REPLY_MAX] __attribute__((unused)))
+{
+    return restorecon_data();
 }
 
 static int do_idmap(char **arg, char reply[REPLY_MAX])
@@ -162,8 +169,9 @@ struct cmdinfo cmds[] = {
     { "rmuserdata",           2, do_rm_user_data },
     { "movefiles",            0, do_movefiles },
     { "linklib",              3, do_linklib },
-    { "mkuserdata",           3, do_mk_user_data },
+    { "mkuserdata",           4, do_mk_user_data },
     { "rmuser",               1, do_rm_user },
+    { "restorecondata",       0, do_restorecon_data },
     { "idmap",                5, do_idmap },
     { "idmap_with_redirs",    6, do_idmap_with_redirs },
     { "aapt",                 5, do_aapt },
@@ -464,6 +472,10 @@ int initialize_directories() {
             goto fail;
         }
 
+        if (selinux_android_restorecon(android_media_dir.path, 0)) {
+            goto fail;
+        }
+
         // /data/media/0
         char owner_media_dir[PATH_MAX];
         snprintf(owner_media_dir, PATH_MAX, "%s0", android_media_dir.path);
@@ -618,6 +630,20 @@ int main(const int argc, const char *argv[]) {
     socklen_t alen;
     int lsocket, s, count;
     char nfs_hack_flag[PROPERTY_VALUE_MAX];
+
+    pthread_t worker_threads, signal_thread;
+    pthread_attr_t pthread_custom_attr;
+    sigset_t sigs_to_block;
+    pthread_mutex_init(&io_mutex, NULL);
+    pthread_cond_init(&io_wait, NULL);
+
+    pthread_attr_init(&pthread_custom_attr);
+
+    sigemptyset(&sigs_to_block);
+    sigaddset(&sigs_to_block, SIGIO);
+    pthread_sigmask(SIG_BLOCK, &sigs_to_block, NULL);
+
+    pthread_create(&signal_thread, &pthread_custom_attr, io_signal_handler, NULL);
 
     pthread_t worker_threads, signal_thread;
     pthread_attr_t pthread_custom_attr;
