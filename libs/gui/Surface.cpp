@@ -310,8 +310,12 @@ int Surface::queueBuffer(android_native_buffer_t* buffer, int fenceFd) {
     mCrop.intersect(Rect(buffer->width, buffer->height), &crop);
 
 #ifdef QCOM_BSP
-    Rect dirtyRect = mDirtyRect.isEmpty() ?
-        Rect(buffer->width, buffer->height) : mDirtyRect;
+    Rect dirtyRect = mDirtyRect;
+    if(dirtyRect.isEmpty()) {
+        int drWidth = mUserWidth ? mUserWidth : mDefaultWidth;
+        int drHeight = mUserHeight ? mUserHeight : mDefaultHeight;
+        dirtyRect = Rect(drWidth, drHeight);
+    }
 #endif
 
     sp<Fence> fence(fenceFd >= 0 ? new Fence(fenceFd) : Fence::NO_FENCE);
@@ -442,9 +446,11 @@ int Surface::perform(int operation, va_list args)
     case NATIVE_WINDOW_SET_BUFFERS_FORMAT:
         res = dispatchSetBuffersFormat(args);
         break;
+#ifdef QCOM_HARDWARE
     case NATIVE_WINDOW_SET_BUFFERS_SIZE:
         res = dispatchSetBuffersSize(args);
         break;
+#endif
     case NATIVE_WINDOW_LOCK:
         res = dispatchLock(args);
         break;
@@ -520,10 +526,12 @@ int Surface::dispatchSetBuffersFormat(va_list args) {
     return setBuffersFormat(f);
 }
 
+#ifdef QCOM_HARDWARE
 int Surface::dispatchSetBuffersSize(va_list args) {
     int size = va_arg(args, int);
     return setBuffersSize(size);
 }
+#endif
 
 int Surface::dispatchSetScalingMode(va_list args) {
     int m = va_arg(args, int);
@@ -683,6 +691,7 @@ int Surface::setBuffersFormat(int format)
     return NO_ERROR;
 }
 
+#ifdef QCOM_HARDWARE
 int Surface::setBuffersSize(int size)
 {
     ATRACE_CALL();
@@ -698,6 +707,7 @@ int Surface::setBuffersSize(int size)
     }
     return NO_ERROR;
 }
+#endif
 
 int Surface::setScalingMode(int mode)
 {
