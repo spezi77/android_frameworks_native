@@ -80,6 +80,8 @@ void SensorService::onFirstRef()
         if (count > 0) {
             ssize_t orientationIndex = -1;
             bool hasGyro = false;
+            bool hasMagnetometer = false;
+            bool hasAccelerometer = false;
             uint32_t virtualSensorsNeeds =
                     (1<<SENSOR_TYPE_GRAVITY) |
                     (1<<SENSOR_TYPE_LINEAR_ACCELERATION) |
@@ -95,6 +97,12 @@ void SensorService::onFirstRef()
                     case SENSOR_TYPE_GYROSCOPE:
                     case SENSOR_TYPE_GYROSCOPE_UNCALIBRATED:
                         hasGyro = true;
+                        break;
+                    case SENSOR_TYPE_MAGNETIC_FIELD:
+                        hasMagnetometer = true;
+                        break;
+                    case SENSOR_TYPE_ACCELEROMETER:
+                        hasAccelerometer = true;
                         break;
                     case SENSOR_TYPE_GRAVITY:
                     case SENSOR_TYPE_LINEAR_ACCELERATION:
@@ -112,7 +120,7 @@ void SensorService::onFirstRef()
             // build the sensor list returned to users
             mUserSensorList = mSensorList;
 
-            if (hasGyro) {
+            if (hasGyro && hasMagnetometer && hasAccelerometer) {
                 Sensor aSensor;
 
                 // Add Android virtual sensors if they're not already
@@ -135,9 +143,14 @@ void SensorService::onFirstRef()
 
                 aSensor = registerVirtualSensor( new OrientationSensor() );
                 if (virtualSensorsNeeds & (1<<SENSOR_TYPE_ROTATION_VECTOR)) {
-                    // if we are doing our own rotation-vector, also add
-                    // the orientation sensor and remove the HAL provided one.
-                    mUserSensorList.replaceAt(aSensor, orientationIndex);
+                    if (orientationIndex == -1) {
+                        // some sensor HALs don't provide an orientation sensor.
+                        mUserSensorList.add(aSensor);
+                    } else {
+                        // if we are doing our own rotation-vector, also add
+                        // the orientation sensor and remove the HAL provided one.
+                        mUserSensorList.replaceAt(aSensor, orientationIndex);
+                    }
                 }
 
                 // virtual debugging sensors are not added to mUserSensorList
