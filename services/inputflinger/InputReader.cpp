@@ -16,7 +16,7 @@
 
 #define LOG_TAG "InputReader"
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 
 // Log debug messages for each raw event received from the EventHub.
 #define DEBUG_RAW_EVENTS 0
@@ -57,6 +57,9 @@
 #define INDENT3 "      "
 #define INDENT4 "        "
 #define INDENT5 "          "
+
+// Ultrasound device name.
+#define USF_DEVICE_NAME "usf_tsc"
 
 namespace android {
 
@@ -101,9 +104,9 @@ static inline const char* toString(bool value) {
 }
 
 static int32_t rotateValueUsingRotationMap(int32_t value, int32_t orientation,
-        const int32_t map[][4], size_t mapSize) {
+        const int32_t map[][4], size_t mapSize, int32_t rotationMapOffset) {
     if (orientation != DISPLAY_ORIENTATION_0) {
-        for (size_t i = 0; i < mapSize; i++) {
+        for (size_t i = rotationMapOffset; i < mapSize; i++) {
             if (value == map[i][0]) {
                 return map[i][orientation];
             }
@@ -115,6 +118,16 @@ static int32_t rotateValueUsingRotationMap(int32_t value, int32_t orientation,
 static const int32_t keyCodeRotationMap[][4] = {
         // key codes enumerated counter-clockwise with the original (unrotated) key first
         // no rotation,        90 degree rotation,  180 degree rotation, 270 degree rotation
+
+        // volume keys - tablet
+        { AKEYCODE_VOLUME_UP,   AKEYCODE_VOLUME_UP,   AKEYCODE_VOLUME_DOWN, AKEYCODE_VOLUME_DOWN },
+        { AKEYCODE_VOLUME_DOWN, AKEYCODE_VOLUME_DOWN, AKEYCODE_VOLUME_UP,   AKEYCODE_VOLUME_UP },
+
+        // volume keys - phone or hybrid
+        { AKEYCODE_VOLUME_UP,   AKEYCODE_VOLUME_DOWN, AKEYCODE_VOLUME_DOWN, AKEYCODE_VOLUME_UP },
+        { AKEYCODE_VOLUME_DOWN, AKEYCODE_VOLUME_UP,   AKEYCODE_VOLUME_UP,   AKEYCODE_VOLUME_DOWN },
+
+        // dpad keys - common
         { AKEYCODE_DPAD_DOWN,   AKEYCODE_DPAD_RIGHT,  AKEYCODE_DPAD_UP,     AKEYCODE_DPAD_LEFT },
         { AKEYCODE_DPAD_RIGHT,  AKEYCODE_DPAD_UP,     AKEYCODE_DPAD_LEFT,   AKEYCODE_DPAD_DOWN },
         { AKEYCODE_DPAD_UP,     AKEYCODE_DPAD_LEFT,   AKEYCODE_DPAD_DOWN,   AKEYCODE_DPAD_RIGHT },
@@ -123,9 +136,9 @@ static const int32_t keyCodeRotationMap[][4] = {
 static const size_t keyCodeRotationMapSize =
         sizeof(keyCodeRotationMap) / sizeof(keyCodeRotationMap[0]);
 
-static int32_t rotateKeyCode(int32_t keyCode, int32_t orientation) {
+static int32_t rotateKeyCode(int32_t keyCode, int32_t orientation, int32_t rotationMapOffset) {
     return rotateValueUsingRotationMap(keyCode, orientation,
-            keyCodeRotationMap, keyCodeRotationMapSize);
+            keyCodeRotationMap, keyCodeRotationMapSize, rotationMapOffset);
 }
 
 static void rotateDelta(int32_t orientation, float* deltaX, float* deltaY) {
@@ -2036,10 +2049,16 @@ void KeyboardInputMapper::configure(nsecs_t when,
             mOrientation = DISPLAY_ORIENTATION_0;
         }
     }
+    if (!changes || (changes & InputReaderConfiguration::CHANGE_VOLUME_KEYS_ROTATION)) {
+        // mode 0 (disabled) ~ offset 4
+        // mode 1 (phone) ~ offset 2
+        // mode 2 (tablet) ~ offset 0
+        mRotationMapOffset = 4 - 2 * config->volumeKeysRotationMode;
+    }
 }
 
 void KeyboardInputMapper::configureParameters() {
-    mParameters.orientationAware = false;
+    mParameters.orientationAware = !getDevice()->isExternal();
     getDevice()->getConfiguration().tryGetProperty(String8("keyboard.orientationAware"),
             mParameters.orientationAware);
 
@@ -2088,6 +2107,11 @@ void KeyboardInputMapper::process(const RawEvent* rawEvent) {
                 keyCode = AKEYCODE_UNKNOWN;
                 flags = 0;
             }
+            InputDeviceIdentifier identifier = getEventHub()->getDeviceIdentifier(rawEvent->deviceId);
+            if ((identifier.name == USF_DEVICE_NAME) && (scanCode == BTN_USF_HOVERING_CURSOR))
+            {
+                break;
+            }
             processKey(rawEvent->when, rawEvent->value != 0, keyCode, scanCode, flags);
         }
         break;
@@ -2119,7 +2143,7 @@ void KeyboardInputMapper::processKey(nsecs_t when, bool down, int32_t keyCode,
     if (down) {
         // Rotate key codes according to orientation if needed.
         if (mParameters.orientationAware && mParameters.hasAssociatedDisplay) {
-            keyCode = rotateKeyCode(keyCode, mOrientation);
+            keyCode = rotateKeyCode(keyCode, mOrientation, mRotationMapOffset);
         }
 
         // Add key down.
@@ -2593,6 +2617,7 @@ void CursorInputMapper::fadePointer() {
 TouchInputMapper::TouchInputMapper(InputDevice* device) :
         InputMapper(device),
         mSource(0), mDeviceMode(DEVICE_MODE_DISABLED),
+        mHasExternalHoveringCursorControl(false), mExternalHoveringCursorVisible(false),
         mSurfaceWidth(-1), mSurfaceHeight(-1), mSurfaceLeft(0), mSurfaceTop(0),
         mSurfaceOrientation(DISPLAY_ORIENTATION_0) {
 }
@@ -2782,7 +2807,8 @@ void TouchInputMapper::configure(nsecs_t when,
     bool resetNeeded = false;
     if (!changes || (changes & (InputReaderConfiguration::CHANGE_DISPLAY_INFO
             | InputReaderConfiguration::CHANGE_POINTER_GESTURE_ENABLEMENT
-            | InputReaderConfiguration::CHANGE_SHOW_TOUCHES))) {
+            | InputReaderConfiguration::CHANGE_SHOW_TOUCHES
+            | InputReaderConfiguration::CHANGE_STYLUS_ICON_ENABLED))) {
         // Configure device sources, surface dimensions, orientation and
         // scaling factors.
         configureSurface(when, &resetNeeded);
@@ -2865,6 +2891,8 @@ void TouchInputMapper::configureParameters() {
                 mParameters.deviceType == Parameters::DEVICE_TYPE_TOUCH_SCREEN
                         && getDevice()->isExternal();
     }
+
+    mHasExternalHoveringCursorControl = getDevice()->hasKey(BTN_USF_HOVERING_CURSOR);
 
     // Initial downs on external touch devices should wake the device.
     // Normally we don't do this for internal touch screens to prevent them from waking
@@ -3068,7 +3096,7 @@ void TouchInputMapper::configureSurface(nsecs_t when, bool* outResetNeeded) {
     }
 
     // Create pointer controller if needed.
-    if (mDeviceMode == DEVICE_MODE_POINTER ||
+    if (mDeviceMode == DEVICE_MODE_POINTER || mHasExternalHoveringCursorControl ||
             (mDeviceMode == DEVICE_MODE_DIRECT && mConfig.showTouches)) {
         if (mPointerController == NULL) {
             mPointerController = getPolicy()->obtainPointerController(getDeviceId());
@@ -3738,6 +3766,20 @@ void TouchInputMapper::process(const RawEvent* rawEvent) {
     if (rawEvent->type == EV_SYN && rawEvent->code == SYN_REPORT) {
         sync(rawEvent->when);
     }
+    if (mHasExternalHoveringCursorControl && rawEvent->type == EV_KEY) {
+        if (rawEvent->code == BTN_USF_HOVERING_CURSOR && mPointerController != NULL) {
+            if (rawEvent->value) {
+                // show a hover cursor
+                mPointerController->setPresentation(PointerControllerInterface::PRESENTATION_STYLUS_HOVER);
+                mPointerController->unfade(android::PointerControllerInterface::TRANSITION_IMMEDIATE);
+                mExternalHoveringCursorVisible = true;
+            } else {
+                // hide the cursor
+                mPointerController->fade(android::PointerControllerInterface::TRANSITION_IMMEDIATE);
+                mExternalHoveringCursorVisible = false;
+            }
+        }
+    }
 }
 
 void TouchInputMapper::sync(nsecs_t when) {
@@ -3867,6 +3909,25 @@ void TouchInputMapper::sync(nsecs_t when) {
                 mPointerController->setSpots(mCurrentCookedPointerData.pointerCoords,
                         mCurrentCookedPointerData.idToIndex,
                         mCurrentCookedPointerData.touchingIdBits);
+            }
+
+            if (mHasExternalHoveringCursorControl && mPointerController != NULL) {
+                if (mExternalHoveringCursorVisible) {
+                    // find the pointer position from the first touch point (either touching or hovering)
+                    uint32_t index = MAX_POINTERS;
+                    if (!mCurrentRawPointerData.touchingIdBits.isEmpty()) {
+                        index = mCurrentCookedPointerData.idToIndex[mCurrentRawPointerData.touchingIdBits.firstMarkedBit()];
+                    } else if (!mCurrentRawPointerData.hoveringIdBits.isEmpty()) {
+                        index = mCurrentCookedPointerData.idToIndex[mCurrentRawPointerData.hoveringIdBits.firstMarkedBit()];
+                    }
+                    if (index < MAX_POINTERS)
+                    {
+                        float x = mCurrentCookedPointerData.pointerCoords[index].getX();
+                        float y = mCurrentCookedPointerData.pointerCoords[index].getY();
+                        mPointerController->setPosition(x, y);
+                        mPointerController->unfade(android::PointerControllerInterface::TRANSITION_IMMEDIATE);
+                    }
+                }
             }
 
             dispatchHoverExit(when, policyFlags);
@@ -4469,7 +4530,7 @@ void TouchInputMapper::dispatchPointerGestures(nsecs_t when, uint32_t policyFlag
                 && (mPointerGesture.lastGestureMode == PointerGesture::SWIPE
                         || mPointerGesture.lastGestureMode == PointerGesture::FREEFORM)) {
             // Remind the user of where the pointer is after finishing a gesture with spots.
-            mPointerController->unfade(PointerControllerInterface::TRANSITION_GRADUAL);
+            unfadePointer(PointerControllerInterface::TRANSITION_GRADUAL);
         }
         break;
     case PointerGesture::TAP:
@@ -5530,7 +5591,7 @@ void TouchInputMapper::dispatchPointerSimple(nsecs_t when, uint32_t policyFlags,
             mPointerController->setPresentation(PointerControllerInterface::PRESENTATION_POINTER);
             mPointerController->clearSpots();
             mPointerController->setButtonState(mCurrentButtonState);
-            mPointerController->unfade(PointerControllerInterface::TRANSITION_IMMEDIATE);
+            unfadePointer(PointerControllerInterface::TRANSITION_IMMEDIATE);
         } else if (!down && !hovering && (mPointerSimple.down || mPointerSimple.hovering)) {
             mPointerController->fade(PointerControllerInterface::TRANSITION_GRADUAL);
         }
@@ -5731,6 +5792,13 @@ bool TouchInputMapper::updateMovedPointers(const PointerProperties* inProperties
 void TouchInputMapper::fadePointer() {
     if (mPointerController != NULL) {
         mPointerController->fade(PointerControllerInterface::TRANSITION_GRADUAL);
+    }
+}
+
+void TouchInputMapper::unfadePointer(PointerControllerInterface::Transition transition) {
+    if (mPointerController != NULL &&
+            !(mPointerUsage == POINTER_USAGE_STYLUS && !mConfig.stylusIconEnabled)) {
+        mPointerController->unfade(transition);
     }
 }
 

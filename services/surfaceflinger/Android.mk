@@ -13,6 +13,7 @@ LOCAL_SRC_FILES:= \
     FrameTracker.cpp \
     Layer.cpp \
     LayerDim.cpp \
+    LayerBlur.cpp \
     MessageQueue.cpp \
     MonitoredProducer.cpp \
     SurfaceFlinger.cpp \
@@ -50,6 +51,10 @@ ifeq ($(TARGET_DISABLE_TRIPLE_BUFFERING),true)
 	LOCAL_CFLAGS += -DTARGET_DISABLE_TRIPLE_BUFFERING
 endif
 
+ifeq ($(BOARD_EGL_NEEDS_FNW),true)
+    LOCAL_CFLAGS += -DEGL_NEEDS_FNW
+endif
+
 ifneq ($(NUM_FRAMEBUFFER_SURFACE_BUFFERS),)
   LOCAL_CFLAGS += -DNUM_FRAMEBUFFER_SURFACE_BUFFERS=$(NUM_FRAMEBUFFER_SURFACE_BUFFERS)
 endif
@@ -82,6 +87,12 @@ else
     LOCAL_CFLAGS += -DPRESENT_TIME_OFFSET_FROM_VSYNC_NS=0
 endif
 
+ifneq ($(MAX_VIRTUAL_DISPLAY_DIMENSION),)
+    LOCAL_CFLAGS += -DMAX_VIRTUAL_DISPLAY_DIMENSION=$(MAX_VIRTUAL_DISPLAY_DIMENSION)
+else
+    LOCAL_CFLAGS += -DMAX_VIRTUAL_DISPLAY_DIMENSION=0
+endif
+
 LOCAL_CFLAGS += -fvisibility=hidden -Werror=format
 LOCAL_CFLAGS += -std=c++11
 
@@ -106,10 +117,9 @@ ifeq ($(TARGET_USES_QCOM_BSP), true)
 endif
 
 ifeq ($(TARGET_HAVE_UI_BLUR),true)
-    LOCAL_SRC_FILES += LayerBlur.cpp
-    LOCAL_CFLAGS += -DWITH_UIBLUR
-    LOCAL_SHARED_LIBRARIES += libuiblur
     LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/ui
+    LOCAL_SHARED_LIBRARIES += libuiblur
+    LOCAL_CFLAGS += -DUI_BLUR
 endif
 
 LOCAL_MODULE:= libsurfaceflinger
@@ -120,17 +130,22 @@ include $(BUILD_SHARED_LIBRARY)
 # build surfaceflinger's executable
 include $(CLEAR_VARS)
 
+LOCAL_LDFLAGS := -Wl,--version-script,art/sigchainlib/version-script.txt -Wl,--export-dynamic
 LOCAL_CFLAGS:= -DLOG_TAG=\"SurfaceFlinger\"
+LOCAL_CPPFLAGS:= -std=c++11
 
 LOCAL_SRC_FILES:= \
-	main_surfaceflinger.cpp 
+	main_surfaceflinger.cpp
 
 LOCAL_SHARED_LIBRARIES := \
 	libsurfaceflinger \
 	libcutils \
 	liblog \
 	libbinder \
-	libutils
+	libutils \
+	libdl
+
+LOCAL_WHOLE_STATIC_LIBRARIES := libsigchain
 
 LOCAL_MODULE:= surfaceflinger
 

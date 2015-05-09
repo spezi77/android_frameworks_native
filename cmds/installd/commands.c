@@ -20,6 +20,7 @@
 #include <cutils/sched_policy.h>
 #include <diskusage/dirsize.h>
 #include <selinux/android.h>
+#include <system/thread_defs.h>
 
 /* Directory records that are used in execution of commands. */
 dir_rec_t android_data_dir;
@@ -647,7 +648,8 @@ static void run_dexopt(int zip_fd, int odex_fd, const char* input_file_name,
 }
 
 static void run_patchoat(int input_fd, int oat_fd, const char* input_file_name,
-    const char* output_file_name, const char *pkgname, const char *instruction_set)
+    const char* output_file_name, const char *pkgname __unused, const char *instruction_set,
+    int is_gz, int swap_fd)
 {
     static const int MAX_INT_LEN = 12;      // '-'+10dig+'\0' -OR- 0x+8dig
     static const unsigned int MAX_INSTRUCTION_SET_LEN = 7;
@@ -660,34 +662,44 @@ static void run_patchoat(int input_fd, int oat_fd, const char* input_file_name,
     }
 
     /* input_file_name/input_fd should be the .odex/.oat file that is precompiled. I think*/
+    const char* input_option = is_gz ? "--input-oat-gz-fd=" : "--input-oat-fd=";
     char instruction_set_arg[strlen("--instruction-set=") + MAX_INSTRUCTION_SET_LEN];
     char output_oat_fd_arg[strlen("--output-oat-fd=") + MAX_INT_LEN];
-    char input_oat_fd_arg[strlen("--input-oat-fd=") + MAX_INT_LEN];
+    char input_oat_fd_arg[strlen(input_option) + MAX_INT_LEN];
     const char* patched_image_location_arg = "--patched-image-location=/system/framework/boot.art";
+    char swap_fd_str[strlen("--swap-fd=") + MAX_INT_LEN];
+
     // The caller has already gotten all the locks we need.
     const char* no_lock_arg = "--no-lock-output";
     sprintf(instruction_set_arg, "--instruction-set=%s", instruction_set);
     sprintf(output_oat_fd_arg, "--output-oat-fd=%d", oat_fd);
-    sprintf(input_oat_fd_arg, "--input-oat-fd=%d", input_fd);
-    ALOGE("Running %s isa=%s in-fd=%d (%s) out-fd=%d (%s)\n",
-          PATCHOAT_BIN, instruction_set, input_fd, input_file_name, oat_fd, output_file_name);
+    sprintf(input_oat_fd_arg, "%s%d", input_option, input_fd);
+
+    if (swap_fd >= 0) {
+        sprintf(swap_fd_str, "--swap-fd=%d", swap_fd);
+    }
 
     /* patchoat, patched-image-location, no-lock, isa, input-fd, output-fd */
-    char* argv[7];
+    char* argv[8];
     argv[0] = (char*) PATCHOAT_BIN;
     argv[1] = (char*) patched_image_location_arg;
     argv[2] = (char*) no_lock_arg;
     argv[3] = instruction_set_arg;
     argv[4] = output_oat_fd_arg;
     argv[5] = input_oat_fd_arg;
-    argv[6] = NULL;
+    argv[6] = swap_fd != -1 ? swap_fd_str : NULL;
+    argv[7] = NULL;
+
+    ALOGE("Patching from '%s' to '%s': %s %s %s %s %s %s %s",
+          input_file_name, output_file_name, argv[0], argv[1], argv[2], argv[3],
+          argv[4], argv[5], argv[6] == NULL ? "" : argv[6]);
 
     execv(PATCHOAT_BIN, (char* const *)argv);
     ALOGE("execv(%s) failed: %s\n", PATCHOAT_BIN, strerror(errno));
 }
 
 static void run_dex2oat(int zip_fd, int oat_fd, const char* input_file_name,
-    const char* output_file_name, const char *pkgname, const char *instruction_set,
+    const char* output_file_name, int swap_fd, const char *pkgname, const char *instruction_set,
     bool vm_safe_mode)
 {
     static const unsigned int MAX_INSTRUCTION_SET_LEN = 7;
@@ -745,6 +757,8 @@ static void run_dex2oat(int zip_fd, int oat_fd, const char* input_file_name,
     char dex2oat_Xms_arg[strlen("-Xms") + PROPERTY_VALUE_MAX];
     char dex2oat_Xmx_arg[strlen("-Xmx") + PROPERTY_VALUE_MAX];
     char dex2oat_compiler_filter_arg[strlen("--compiler-filter=") + PROPERTY_VALUE_MAX];
+    bool have_dex2oat_swap_fd = false;
+    char dex2oat_swap_fd[strlen("--swap-fd=") + MAX_INT_LEN];
 
     sprintf(zip_fd_arg, "--zip-fd=%d", zip_fd);
     sprintf(zip_location_arg, "--zip-location=%s", input_file_name);
@@ -752,6 +766,10 @@ static void run_dex2oat(int zip_fd, int oat_fd, const char* input_file_name,
     sprintf(oat_location_arg, "--oat-location=%s", output_file_name);
     sprintf(instruction_set_arg, "--instruction-set=%s", instruction_set);
     sprintf(instruction_set_features_arg, "--instruction-set-features=%s", dex2oat_isa_features);
+    if (swap_fd >= 0) {
+        have_dex2oat_swap_fd = true;
+        sprintf(dex2oat_swap_fd, "--swap-fd=%d", swap_fd);
+    }
 
     bool have_profile_file = false;
     bool have_top_k_profile_threshold = false;
@@ -796,7 +814,8 @@ static void run_dex2oat(int zip_fd, int oat_fd, const char* input_file_name,
                + (have_dex2oat_Xms_flag ? 2 : 0)
                + (have_dex2oat_Xmx_flag ? 2 : 0)
                + (have_dex2oat_compiler_filter_flag ? 1 : 0)
-               + (have_dex2oat_flags ? 1 : 0)];
+               + (have_dex2oat_flags ? 1 : 0)
+               + (have_dex2oat_swap_fd ? 1 : 0)];
     int i = 0;
     argv[i++] = (char*)DEX2OAT_BIN;
     argv[i++] = zip_fd_arg;
@@ -826,6 +845,9 @@ static void run_dex2oat(int zip_fd, int oat_fd, const char* input_file_name,
     }
     if (have_dex2oat_flags) {
         argv[i++] = dex2oat_flags;
+    }
+    if (have_dex2oat_swap_fd) {
+        argv[i++] = dex2oat_swap_fd;
     }
     // Do not add after dex2oat_flags, they should override others for debugging.
     argv[i] = NULL;
@@ -860,6 +882,58 @@ static int wait_child(pid_t pid)
     }
 }
 
+/*
+ * Whether dexopt should use a swap file when compiling an APK. If kAlwaysProvideSwapFile, do this
+ * on all devices (dex2oat will make a more informed decision itself, anyways). Otherwise, only do
+ * this on a low-mem device.
+ */
+static bool kAlwaysProvideSwapFile = true;
+
+static bool ShouldUseSwapFileForDexopt() {
+    if (kAlwaysProvideSwapFile) {
+        return true;
+    }
+
+    char low_mem_buf[PROPERTY_VALUE_MAX];
+    property_get("ro.config.low_ram", low_mem_buf, "");
+    return (strcmp(low_mem_buf, "true") == 0);
+}
+
+/*
+ * Computes the odex file for the given apk_path and instruction_set.
+ * /system/framework/whatever.jar -> /system/framework/oat/<isa>/whatever.odex
+ *
+ * Returns false if it failed to determine the odex file path.
+ */
+static bool calculate_odex_file_path(char path[PKG_PATH_MAX],
+                                     const char *apk_path,
+                                     const char *instruction_set)
+{
+    if (strlen(apk_path) + + strlen(instruction_set)
+        + strlen("/") + strlen("odex") + 1 > PKG_PATH_MAX) {
+      ALOGE("apk_path '%s' may be too long to form odex file path.\n", apk_path);
+      return false;
+    }
+
+    strcpy(path, apk_path);
+    char *end = strrchr(path, '/');
+    if (end == NULL) {
+      ALOGE("apk_path '%s' has no '/'s in it?!\n", apk_path);
+      return false;
+    }
+    const char *apk_end = apk_path + (end - path); // strrchr(apk_path, '/');
+
+    strcpy(end + 1, instruction_set);       // path = /system/framework/\0
+    strcat(path, apk_end);         // path = /system/framework/<isa>/whatever.jar\0
+    end = strrchr(path, '.');
+    if (end == NULL) {
+      ALOGE("apk_path '%s' has no extension.\n", apk_path);
+      return false;
+    }
+    strcpy(end + 1, "odex");
+    return true;
+}
+
 int dexopt(const char *apk_path, uid_t uid, bool is_public,
            const char *pkgname, const char *instruction_set,
            bool vm_safe_mode, bool is_patchoat)
@@ -868,11 +942,17 @@ int dexopt(const char *apk_path, uid_t uid, bool is_public,
     struct stat input_stat, dex_stat;
     char out_path[PKG_PATH_MAX];
     char persist_sys_dalvik_vm_lib[PROPERTY_VALUE_MAX];
+    char swap_file_name[PKG_PATH_MAX];
     char *end;
     const char *input_file;
     char in_odex_path[PKG_PATH_MAX];
-    int res, input_fd=-1, out_fd=-1;
+    char gz_file[PKG_PATH_MAX];
+    char tmp_path[PKG_PATH_MAX];
+    int res, input_fd=-1, out_fd=-1, swap_fd=-1, is_gz=0;
 
+    // Early best-effort check whether we can fit the the path into our buffers.
+    // Note: the cache path will require an additional 5 bytes for ".swap", but we'll try to run
+    // without a swap file, if necessary.
     if (strlen(apk_path) >= (PKG_PATH_MAX - 8)) {
         return -1;
     }
@@ -904,31 +984,29 @@ int dexopt(const char *apk_path, uid_t uid, bool is_public,
         return -1;
     }
 
+    if (!calculate_odex_file_path(in_odex_path, apk_path, instruction_set)) {
+      return -1;
+    }
+
     if (is_patchoat) {
-        /* /system/framework/whatever.jar -> /system/framework/<isa>/whatever.odex */
-        strcpy(in_odex_path, apk_path);
-        end = strrchr(in_odex_path, '/');
-        if (end == NULL) {
-            ALOGE("apk_path '%s' has no '/'s in it?!\n", apk_path);
-            return -1;
-        }
-        const char *apk_end = apk_path + (end - in_odex_path); // strrchr(apk_path, '/');
-        strcpy(end + 1, instruction_set); // in_odex_path now is /system/framework/<isa>\0
-        strcat(in_odex_path, apk_end);
-        end = strrchr(in_odex_path, '.');
-        if (end == NULL) {
-            return -1;
-        }
-        strcpy(end + 1, "odex");
         input_file = in_odex_path;
     } else {
-        input_file = apk_path;
+        strcpy(gz_file, in_odex_path);
+        strcat(gz_file, ".gz");
+        if (!access(gz_file, F_OK)) {
+          is_patchoat = 1;
+          is_gz = 1;
+          input_file = gz_file;
+        } else {
+          input_file = apk_path;
+        }
     }
 
     memset(&input_stat, 0, sizeof(input_stat));
     stat(input_file, &input_stat);
 
     input_fd = open(input_file, O_RDONLY, 0);
+
     if (input_fd < 0) {
         ALOGE("installd cannot open '%s' for input during dexopt\n", input_file);
         return -1;
@@ -956,6 +1034,28 @@ int dexopt(const char *apk_path, uid_t uid, bool is_public,
         create_profile_file(pkgname, uid);
     }
 
+    // Create a swap file if necessary.
+    if (is_gz || (!is_patchoat && ShouldUseSwapFileForDexopt())) {
+        // Make sure there really is enough space.
+        size_t out_len = strlen(out_path);
+        if (out_len + strlen(".swap") + 1 <= PKG_PATH_MAX) {
+            strcpy(swap_file_name, out_path);
+            strcpy(swap_file_name + strlen(out_path), ".swap");
+            unlink(swap_file_name);
+            swap_fd = open(swap_file_name, O_RDWR | O_CREAT | O_EXCL, 0600);
+            if (swap_fd < 0) {
+                // Could not create swap file. Optimistically go on and hope that we can compile
+                // without it.
+                ALOGE("installd could not create '%s' for swap during dexopt\n", swap_file_name);
+            } else {
+                // Immediately unlink. We don't really want to hit flash.
+                unlink(swap_file_name);
+            }
+        } else {
+            // Swap file path is too long. Try to run without.
+            ALOGE("installd could not create swap file for path %s during dexopt\n", out_path);
+        }
+    }
 
     ALOGV("DexInv: --- BEGIN '%s' ---\n", input_file);
 
@@ -985,6 +1085,10 @@ int dexopt(const char *apk_path, uid_t uid, bool is_public,
             ALOGE("set_sched_policy failed: %s\n", strerror(errno));
             exit(70);
         }
+        if (setpriority(PRIO_PROCESS, 0, ANDROID_PRIORITY_BACKGROUND) < 0) {
+            ALOGE("setpriority failed: %s\n", strerror(errno));
+            exit(71);
+        }
         if (flock(out_fd, LOCK_EX | LOCK_NB) != 0) {
             ALOGE("flock(%s) failed: %s\n", out_path, strerror(errno));
             exit(67);
@@ -994,10 +1098,11 @@ int dexopt(const char *apk_path, uid_t uid, bool is_public,
             run_dexopt(input_fd, out_fd, input_file, out_path);
         } else if (strncmp(persist_sys_dalvik_vm_lib, "libart", 6) == 0) {
             if (is_patchoat) {
-                run_patchoat(input_fd, out_fd, input_file, out_path, pkgname, instruction_set);
+                run_patchoat(input_fd, out_fd, input_file, out_path, pkgname,
+                         instruction_set, is_gz, swap_fd);
             } else {
-                run_dex2oat(input_fd, out_fd, input_file, out_path, pkgname, instruction_set,
-                            vm_safe_mode);
+                run_dex2oat(input_fd, out_fd, input_file, out_path, swap_fd, pkgname,
+                            instruction_set, vm_safe_mode);
             }
         } else {
             exit(69);   /* Unexpected persist.sys.dalvik.vm.lib value */
@@ -1019,6 +1124,9 @@ int dexopt(const char *apk_path, uid_t uid, bool is_public,
 
     close(out_fd);
     close(input_fd);
+    if (swap_fd != -1) {
+        close(swap_fd);
+    }
     return 0;
 
 fail:
@@ -1030,6 +1138,21 @@ fail:
         close(input_fd);
     }
     return -1;
+}
+
+int mark_boot_complete(const char* instruction_set)
+{
+  char boot_marker_path[PKG_PATH_MAX];
+  sprintf(boot_marker_path,"%s%s/.booting", DALVIK_CACHE_PREFIX, instruction_set);
+
+  ALOGV("mark_boot_complete : %s", boot_marker_path);
+  if (unlink(boot_marker_path) != 0) {
+      ALOGE("Unable to unlink boot marker at %s, error=%s", boot_marker_path,
+            strerror(errno));
+      return -1;
+  }
+
+  return 0;
 }
 
 void mkinnerdirs(char* path, int basepos, mode_t mode, int uid, int gid,
