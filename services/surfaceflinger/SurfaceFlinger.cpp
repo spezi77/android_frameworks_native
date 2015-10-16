@@ -3477,12 +3477,6 @@ status_t SurfaceFlinger::captureScreenImplLocked(
         std::swap(hw_w, hw_h);
     }
 
-    if ((reqWidth > hw_w) || (reqHeight > hw_h)) {
-        ALOGE("size mismatch (%d, %d) > (%d, %d)",
-                reqWidth, reqHeight, hw_w, hw_h);
-        return BAD_VALUE;
-    }
-
     ++mActiveFrameSequence;
 
     reqWidth  = (!reqWidth)  ? hw_w : reqWidth;
