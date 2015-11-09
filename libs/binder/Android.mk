@@ -36,6 +36,7 @@ sources := \
     PermissionCache.cpp \
     ProcessState.cpp \
     Static.cpp \
+    Status.cpp \
     TextOutput.cpp \
 
 ifeq ($(BOARD_NEEDS_MEMORYHEAPION),true)
