@@ -730,9 +730,6 @@ status_t HWComposer::prepare() {
                     if (l.compositionType == HWC_OVERLAY) {
                         disp.hasOvComp = true;
                     }
-                    if (isCompositionTypeBlit(l.compositionType)) {
-                        disp.hasFbComp = true;
-                    }
                     if (l.compositionType == HWC_CURSOR_OVERLAY) {
                         disp.hasOvComp = true;
                     }
