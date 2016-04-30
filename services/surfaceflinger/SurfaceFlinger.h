@@ -471,6 +471,7 @@ private:
     void logFrameStats();
 
     void dumpStaticScreenStats(String8& result) const;
+    virtual void dumpDrawCycle(bool /* prePrepare */ ) { }
 
     /* ------------------------------------------------------------------------
      * Attributes
@@ -551,6 +552,9 @@ private:
 
     mat4 mColorMatrix;
     bool mHasColorMatrix;
+
+    mat4 mSecondaryColorMatrix;
+    bool mHasSecondaryColorMatrix;
 
     // Static screen stats
     bool mHasPoweredOff;
