@@ -61,7 +61,9 @@
 #include "LayerRejecter.h"
 #include "MonitoredProducer.h"
 #include "SurfaceFlinger.h"
+#ifdef USE_CAF_SF
 #include "gralloc_priv.h"
+#endif
 
 #include "TimeStats/TimeStats.h"
 
@@ -654,8 +656,12 @@ bool Layer::isSecure() const {
 }
 
 bool Layer::isSecureDisplay() const {
+#ifdef USE_CAF_SF
     const sp<GraphicBuffer>& activeBuffer(mActiveBuffer);
     return activeBuffer && (activeBuffer->getUsage() & GRALLOC_USAGE_PRIVATE_SECURE_DISPLAY);
+#else
+    return false;
+#endif
 }
 
 bool Layer::isSecureCamera() const {

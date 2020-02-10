@@ -140,7 +140,9 @@ private:
     std::atomic<bool> mSidebandStreamChanged{false};
 
     void fakeVsync();
+#ifdef USE_CAF_SF
     nsecs_t mLastTimeStamp = -1;
+#endif
 };
 
 } // namespace android
